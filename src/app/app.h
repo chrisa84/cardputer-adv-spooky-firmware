@@ -76,7 +76,7 @@ void bar(M5Canvas &c, int x, int y, int w, int h, float frac, uint16_t color);
 void spark(M5Canvas &c, int x, int y, int w, int h, const float *data, int n, int head, float lo, float hi,
            uint16_t color, bool fill = true);
 void gauge(M5Canvas &c, int cx, int cy, int r, float frac, uint16_t color, const char *label);
-void wrapText(M5Canvas &c, int x, int y, int w, const char *text, int lineH);
+int wrapText(M5Canvas &c, int x, int y, int w, const char *text, int lineH);   // returns the y below the text
 void toast(const char *text, uint16_t color = col::ink);   // short message over the current screen
 void drawToast(M5Canvas &c);
 }  // namespace ui

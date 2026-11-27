@@ -23,8 +23,54 @@ portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 bool bleUp = false;
 uint32_t prng = 7;
 
+// ---- census: what kinds of device are advertising nearby (counts only; addresses are hashed, then forgotten) ----
+enum Kind : uint8_t { K_APPLE, K_FINDMY, K_AIRPODS, K_FASTPAIR, K_SAMSUNG, K_MICROSOFT, K_TILE, K_OTHER, K_NKINDS };
+const char *KIND_NAMES[K_NKINDS] = {"Apple devices", "Find My trackers", "AirPods etc", "Google Fast Pair",
+                                    "Samsung", "Microsoft", "Tile", "other"};
+struct Seen { uint32_t hash; uint8_t kind; uint32_t at; };
+const int MAXSEEN = 96;
+Seen seen[MAXSEEN];
+int nSeen = 0;
+bool censusOn = false;
+
+Kind classify(NimBLEAdvertisedDevice *d) {
+  if (d->haveManufacturerData()) {
+    std::string md = d->getManufacturerData();
+    if (md.size() >= 2) {
+      uint16_t company = (uint8_t)md[0] | ((uint8_t)md[1] << 8);
+      uint8_t type = md.size() >= 3 ? (uint8_t)md[2] : 0;
+      if (company == 0x004C) return type == 0x12 ? K_FINDMY : type == 0x07 ? K_AIRPODS : K_APPLE;
+      if (company == 0x0075) return K_SAMSUNG;
+      if (company == 0x0006) return K_MICROSOFT;
+    }
+  }
+  if (d->isAdvertisingService(NimBLEUUID((uint16_t)0xFE2C))) return K_FASTPAIR;
+  if (d->isAdvertisingService(NimBLEUUID((uint16_t)0xFEED)) || d->isAdvertisingService(NimBLEUUID((uint16_t)0xFEEC))) return K_TILE;
+  return K_OTHER;
+}
+
+void censusNote(NimBLEAdvertisedDevice *d) {
+  const uint8_t *a = d->getAddress().getNative();
+  uint32_t h = 2166136261u;
+  for (int i = 0; i < 6; i++) h = (h ^ a[i]) * 16777619u;
+  Kind k = classify(d);
+  uint32_t now = millis();
+  portENTER_CRITICAL(&mux);
+  int i = 0;
+  for (; i < nSeen; i++) if (seen[i].hash == h) break;
+  if (i == nSeen) {
+    if (nSeen < MAXSEEN) nSeen++;
+    else { int old = 0; for (int j = 1; j < MAXSEEN; j++) if (seen[j].at < seen[old].at) old = j; i = old; }
+    seen[i].hash = h;
+  }
+  seen[i].kind = k;
+  seen[i].at = now;
+  portEXIT_CRITICAL(&mux);
+}
+
 class ScanCb : public NimBLEAdvertisedDeviceCallbacks {
   void onResult(NimBLEAdvertisedDevice *d) override {
+    if (censusOn) { censusNote(d); return; }
     const uint8_t *a = d->getAddress().getNative();
     int8_t r = d->getRSSI();
     std::string nm = d->haveName() ? d->getName() : std::string();
@@ -315,6 +361,69 @@ void draw(M5Canvas &c) {
 }
 }  // namespace spirit
 
+// ---------------------------------------------------------------------------------------------------------------
+// Bluetooth Census
+// ---------------------------------------------------------------------------------------------------------------
+namespace census {
+const uint32_t WINDOW = 30000;   // a device counts if heard in the last 30 s
+int counts[K_NKINDS];
+int total = 0, peakTotal = 0;
+float hist[120];
+int head = 0;
+uint32_t lastCount = 0;
+const uint16_t KIND_COL[K_NKINDS] = {rgb(200, 200, 210), rgb(255, 120, 80), rgb(250, 250, 250), rgb(90, 170, 255),
+                                     rgb(80, 130, 255), rgb(120, 220, 120), rgb(255, 210, 80), rgb(110, 120, 140)};
+
+void enter() { nSeen = 0; censusOn = true; memset(hist, 0, sizeof(hist)); peakTotal = 0; bleStart(); }
+void exit_() { bleStop(); censusOn = false; }
+
+void poll() {
+  uint32_t now = millis();
+  if (now - lastCount < 500) return;
+  lastCount = now;
+  memset(counts, 0, sizeof(counts));
+  total = 0;
+  portENTER_CRITICAL(&mux);
+  for (int i = 0; i < nSeen; i++) if (now - seen[i].at < WINDOW) { counts[seen[i].kind]++; total++; }
+  portEXIT_CRITICAL(&mux);
+  peakTotal = max(peakTotal, total);
+  hist[head] = total;
+  head = (head + 1) % 120;
+}
+
+void draw(M5Canvas &c) {
+  c.fillScreen(col::bg);
+  snprintf(status, sizeof(status), "%d nearby", total);
+  int top = 1;
+  for (int k = 0; k < K_NKINDS; k++) top = max(top, counts[k]);
+  c.setFont(&fonts::Font0);
+  for (int k = 0; k < K_NKINDS; k++) {
+    int y = TOP + 4 + k * 12;
+    c.setTextColor(counts[k] ? col::ink : col::dim);
+    c.drawString(KIND_NAMES[k], 4, y + 1);
+    int w = counts[k] * 70 / top;
+    c.fillRoundRect(100, y, max(2, w), 9, 2, counts[k] ? KIND_COL[k] : col::line);
+    char n[6];
+    snprintf(n, sizeof(n), "%d", counts[k]);
+    c.drawString(n, 104 + w, y + 1);
+  }
+  char s[24];
+  snprintf(s, sizeof(s), "%d", total);
+  ui::bigNumber(c, 206, TOP + 4, s, col::ink, top_center);
+  c.setTextDatum(top_center);
+  c.setTextColor(col::muted);
+  c.drawString("devices", 206, TOP + 30);
+  snprintf(s, sizeof(s), "peak %d", peakTotal);
+  c.drawString(s, 206, TOP + 42);
+  c.setTextDatum(top_left);
+  float hi = max(5, peakTotal);
+  ui::spark(c, 180, TOP + 56, 56, 30, hist, 120, head, 0, hi, col::group[G_SENSE]);
+  c.setTextColor(col::dim);
+  c.drawString("Counts only. Phones change address often,", 4, BOTTOM - 22);
+  c.drawString("so one phone can count twice.", 4, BOTTOM - 12);
+}
+}  // namespace census
+
 }  // namespace
 
 extern const Demo dHotCold = {
@@ -327,3 +436,8 @@ extern const Demo dSpiritBox = {
     "Spirit Box", "own BLE beacon",
     "The partner hides and advertises a beacon. Get closer and the static clears into 'messages'. Pure theatre.",
     G_SENSE, F_PARTNER, "` back", spirit::enter, spirit::exit_, spirit::poll, spirit::draw, nullptr};
+
+extern const Demo dBleCensus = {
+    "BT Census", "BLE advertisements",
+    "Counts nearby Bluetooth devices by kind: Apple, AirPods, Find My trackers, Fast Pair, Tile and more. Counts only.",
+    G_SENSE, F_SOLO, "` back", census::enter, census::exit_, census::poll, census::draw, nullptr};

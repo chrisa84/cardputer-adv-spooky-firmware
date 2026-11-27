@@ -144,7 +144,7 @@ void gauge(M5Canvas &c, int cx, int cy, int r, float frac, uint16_t color, const
   }
 }
 
-void wrapText(M5Canvas &c, int x, int y, int w, const char *text, int lineH) {
+int wrapText(M5Canvas &c, int x, int y, int w, const char *text, int lineH) {
   char line[64];
   int len = 0;
   const char *p = text;
@@ -165,7 +165,8 @@ void wrapText(M5Canvas &c, int x, int y, int w, const char *text, int lineH) {
     len = strlen(trial);
     p = *wordEnd ? wordEnd + 1 : wordEnd;
   }
-  if (len) { line[len] = 0; c.drawString(line, x, y); }
+  if (len) { line[len] = 0; c.drawString(line, x, y); y += lineH; }
+  return y;
 }
 
 static char toastText[40];

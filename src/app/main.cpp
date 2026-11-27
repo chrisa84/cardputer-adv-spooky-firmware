@@ -17,18 +17,27 @@ DEMO(dRangeWalk) DEMO(dFoxHunt) DEMO(dTapeMeasure) DEMO(dWalkieText)
 DEMO(dTheremin) DEMO(dSeismograph) DEMO(dKnockLock) DEMO(dIrWand)
 DEMO(dBatSonar) DEMO(dEchoMeter) DEMO(dChirpModem)
 DEMO(dRadioDice) DEMO(dFeverChart)
+DEMO(dDropTester) DEMO(dSpinTach) DEMO(dPendulum) DEMO(dTiltMaze) DEMO(dSpiritLevel) DEMO(dPedometer)
+DEMO(dTuner) DEMO(dNoiseMeter) DEMO(dScope) DEMO(dWallRuler) DEMO(dWaterGauge) DEMO(dLieDetector)
+DEMO(dWifiDoctor) DEMO(dRouterGeiger) DEMO(dBleCensus) DEMO(dTvRemote)
 #undef DEMO
 
+// Grouped as the menu shows them: sensing, device-to-device, touch and motion, sound, chip.
 static const Demo *DEMOS[] = {
-    &dGhostRadar, &dBreath,     &dTripwire,  &dAirCensus,  &dHotCold,  &dSpiritBox, &dRangeWalk,
-    &dFoxHunt,    &dTapeMeasure, &dWalkieText, &dTheremin,  &dSeismograph, &dKnockLock, &dIrWand,
-    &dBatSonar,   &dEchoMeter,  &dChirpModem, &dRadioDice, &dFeverChart,
+    &dGhostRadar, &dBreath, &dTripwire, &dAirCensus, &dHotCold, &dSpiritBox, &dBleCensus, &dWifiDoctor,
+    &dRouterGeiger,
+    &dRangeWalk, &dFoxHunt, &dTapeMeasure, &dWalkieText,
+    &dTheremin, &dSeismograph, &dKnockLock, &dDropTester, &dSpinTach, &dPendulum, &dTiltMaze, &dSpiritLevel,
+    &dPedometer, &dWaterGauge, &dLieDetector,
+    &dBatSonar, &dEchoMeter, &dChirpModem, &dTuner, &dNoiseMeter, &dScope, &dWallRuler,
+    &dRadioDice, &dFeverChart, &dIrWand, &dTvRemote,
 };
 static const int NDEMOS = sizeof(DEMOS) / sizeof(DEMOS[0]);
 
-enum Screen { MENU, RUN, WIFI_SETUP };
+enum Screen { MENU, RUN, WIFI_SETUP, INFO, SCREEN_CHECK };
 static Screen screen = MENU;
 static int sel = 0, top = 0;
+static int infoMax = 0;
 static const Demo *active = nullptr;
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -140,10 +149,16 @@ static void drawMenu(M5Canvas &c) {
   else chip("SOLO", col::muted);
   if (d.flags & F_ROUTER) chip("ROUTER", col::group[G_SENSE]);
   c.setTextColor(col::ink);
+  c.setClipRect(px, TOP + 62, pw, BOTTOM - TOP - 76);   // long blurbs are cut here; / opens the full text
   ui::wrapText(c, px + 5, TOP + 64, pw - 10, d.blurb, 10);
+  c.clearClipRect();
+  c.setTextColor(col::group[d.group]);
+  c.setTextDatum(bottom_right);
+  c.drawString("/ more", px + pw - 4, BOTTOM - 3);
+  c.setTextDatum(top_left);
 
   char foot[64];
-  snprintf(foot, sizeof(foot), "enter open  ;. move  w wifi  v vol %d%%", settings::volume() * 100 / 255);
+  snprintf(foot, sizeof(foot), "enter open  / info  w wifi  s screen  v vol %d%%", settings::volume() * 100 / 255);
   ui::footer(c, foot);
 }
 
@@ -165,6 +180,124 @@ static void closeDemo() {
   screen = MENU;
   Serial.printf("heap free %u, largest block %u\n", (unsigned)ESP.getFreeHeap(),
                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Info: the selected demo's full description, needs and keys. ;. scroll if it runs long.
+// ---------------------------------------------------------------------------------------------------------------
+static int infoScroll = 0;
+
+static void infoDraw(M5Canvas &c) {
+  const Demo &d = *DEMOS[sel];
+  uint16_t a = col::group[d.group];
+  c.fillScreen(col::bg);
+  c.setClipRect(0, TOP, W, BOTTOM - TOP);
+  int y = TOP + 4 - infoScroll;
+  c.setFont(&fonts::Font0);
+  c.setTextColor(col::muted);
+  c.drawString(d.tag, 6, y);
+  y += 12;
+  int cx = 6;
+  auto chip = [&](const char *s, uint16_t fg) {
+    ui::chip(c, cx, y, s, fg, ui::mix(fg, col::bg, 200));
+    cx += c.textWidth(s) + 10;
+  };
+  if (d.flags & F_EXPERIMENT) chip("EXPERIMENT: may show nothing", rgb(200, 150, 255));
+  else if (d.flags & F_FIDDLY) chip("FIDDLY: needs setup", col::warn);
+  else chip("SOLID", col::ok);
+  if (d.flags & F_PARTNER) chip(d.flags & F_SOLO ? "better with partner" : "needs partner", col::group[G_LINK]);
+  if (d.flags & F_ROUTER) chip("home Wi-Fi", col::group[G_SENSE]);
+  y += 16;
+  c.setFont(&fonts::Font2);
+  c.setTextColor(col::ink);
+  y = ui::wrapText(c, 6, y, W - 12, d.blurb, 16) + 6;
+  c.setFont(&fonts::Font0);
+  c.setTextColor(a);
+  c.drawString("KEYS", 6, y);
+  c.setTextColor(col::ink);
+  y = ui::wrapText(c, 40, y, W - 46, d.help, 10) + 4;
+  if (d.flags & F_PARTNER) {
+    c.setTextColor(a);
+    c.drawString("PARTNER", 6, y);
+    c.setTextColor(col::muted);
+    y = ui::wrapText(c, 56, y, W - 62, "any ESP32 running spooky-partner.bin, or a second Cardputer", 10);
+  }
+  infoMax = max(0, y + infoScroll - BOTTOM + 8);
+  c.clearClipRect();
+  ui::header(c, d.name, a, GROUP_NAMES[d.group]);
+  ui::footer(c, infoMax ? "enter open  ;. scroll  , back" : "enter open  , back");
+}
+
+static void infoKey(char k) {
+  if (k == K_ENTER) { infoScroll = 0; openDemo(DEMOS[sel]); }
+  else if (k == K_UP) infoScroll = max(0, infoScroll - 12);
+  else if (k == K_DOWN) infoScroll = min(infoMax, infoScroll + 12);
+  else if (k == K_LEFT || k == K_ESC || k == K_DEL) { infoScroll = 0; screen = MENU; }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Screen check: a 1-pixel border and corner marks. If an edge is missing, nudge the panel window until all four
+// show. The offset is saved and applied at every boot.
+// ---------------------------------------------------------------------------------------------------------------
+static int offX = 0, offY = 0;
+static int baseOffX = 0, baseOffY = 0;
+
+static void applyOffset() {
+  auto *p = (lgfx::Panel_Device *)M5Cardputer.Display.getPanel();
+  auto cfg = p->config();
+  cfg.offset_x = baseOffX + offX;
+  cfg.offset_y = baseOffY + offY;
+  p->config(cfg);
+  M5Cardputer.Display.setRotation(M5Cardputer.Display.getRotation());  // re-applies the window
+}
+
+static void screenDraw(M5Canvas &c) {
+  c.fillScreen(col::bg);
+  c.drawRect(0, 0, W, H, col::ink);
+  c.drawRect(2, 2, W - 4, H - 4, col::bad);
+  for (int i = 0; i < 4; i++) {
+    int x = i & 1 ? W - 1 : 0, y = i & 2 ? H - 1 : 0;
+    int sx = i & 1 ? -1 : 1, sy = i & 2 ? -1 : 1;
+    c.fillTriangle(x, y, x + sx * 16, y, x, y + sy * 16, col::ok);
+  }
+  for (int x = 0; x < W; x += 10) c.drawFastVLine(x, H / 2 - (x % 50 ? 3 : 7), x % 50 ? 6 : 14, col::muted);
+  c.setFont(&fonts::Font2);
+  c.setTextDatum(middle_center);
+  c.setTextColor(col::ink);
+  c.drawString("All four green corners visible?", W / 2, 30);
+  c.setFont(&fonts::Font0);
+  c.setTextColor(col::muted);
+  char s[48];
+  snprintf(s, sizeof(s), "nudge: x %+d  y %+d", offX, offY);
+  c.drawString(s, W / 2, 46);
+  c.drawString(",/ move left/right   ;. move up/down", W / 2, 92);
+  c.drawString("0 reset   enter save   ` cancel", W / 2, 104);
+  c.setTextDatum(top_left);
+}
+
+static void screenKey(char k) {
+  int ox = offX, oy = offY;
+  if (k == K_LEFT) offX++;
+  else if (k == K_RIGHT) offX--;
+  else if (k == K_UP) offY++;
+  else if (k == K_DOWN) offY--;
+  else if (k == '0') offX = offY = 0;
+  else if (k == K_ENTER) {
+    int buf[2] = {offX, offY};
+    settings::saveBlob("scroff", buf, sizeof(buf));
+    ui::toast("Screen offset saved", col::ok);
+    screen = MENU;
+  } else if (k == K_ESC || k == K_DEL) {
+    int buf[2] = {0, 0};
+    if (settings::loadBlob("scroff", buf, sizeof(buf)) != sizeof(buf)) buf[0] = buf[1] = 0;
+    offX = buf[0];
+    offY = buf[1];
+    applyOffset();
+    screen = MENU;
+  }
+  offX = constrain(offX, -40, 40);
+  offY = constrain(offY, -40, 40);
+  if (ox != offX || oy != offY) applyOffset();
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -256,13 +389,16 @@ static void wifiKey(char k) {
 // ---------------------------------------------------------------------------------------------------------------
 static void dispatch(char k) {
   if (screen == WIFI_SETUP) { wifiKey(k); return; }
+  if (screen == INFO) { infoKey(k); return; }
+  if (screen == SCREEN_CHECK) { screenKey(k); return; }
   if (screen == MENU) {
     if (k == K_UP) sel = (sel + NDEMOS - 1) % NDEMOS;
     else if (k == K_DOWN) sel = (sel + 1) % NDEMOS;
-    else if (k == K_LEFT) sel = max(0, sel - 8);
-    else if (k == K_RIGHT) sel = min(NDEMOS - 1, sel + 8);
+    else if (k == K_RIGHT) { infoScroll = 0; screen = INFO; }
+    else if (k == K_LEFT) sel = max(0, sel - 8);   // jump up a page
     else if (k == K_ENTER) openDemo(DEMOS[sel]);
     else if (k == 'w') wifiEnter();
+    else if (k == 's') screen = SCREEN_CHECK;
     else if (k == 'v') {
       static const int steps[] = {0, 40, 80, 120, 180, 255};
       int i = 0;
@@ -300,6 +436,18 @@ void setup() {
   // offset, so 1 on top of that turns the screen portrait. Only correct it if we somehow come up portrait.
   if (M5Cardputer.Display.width() < M5Cardputer.Display.height()) M5Cardputer.Display.setRotation(0);
   M5Cardputer.Display.setBrightness(110);
+  settings::load();
+  {
+    auto *p = (lgfx::Panel_Device *)M5Cardputer.Display.getPanel();
+    baseOffX = p->config().offset_x;
+    baseOffY = p->config().offset_y;
+    int buf[2];
+    if (settings::loadBlob("scroff", buf, sizeof(buf)) == sizeof(buf) && (buf[0] || buf[1])) {
+      offX = buf[0];
+      offY = buf[1];
+      applyOffset();
+    }
+  }
   canvas.setColorDepth(16);
   bool ok = canvas.createSprite(W, H) != nullptr;
   Serial.printf("display %dx%d rotation %d, sprite %s, heap %u\n", (int)M5Cardputer.Display.width(),
@@ -321,6 +469,8 @@ void loop() {
   lastDraw = now;
   if (screen == MENU) drawMenu(canvas);
   else if (screen == WIFI_SETUP) wifiDraw(canvas);
+  else if (screen == INFO) infoDraw(canvas);
+  else if (screen == SCREEN_CHECK) screenDraw(canvas);
   else if (active) {
     active->draw(canvas);
     ui::header(canvas, active->name, col::group[active->group], status[0] ? status : nullptr);

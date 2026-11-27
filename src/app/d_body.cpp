@@ -4,6 +4,7 @@
 #include "app.h"
 #include "radio.h"
 #include "audio.h"
+#include "ir.h"
 
 namespace {
 
@@ -401,7 +402,6 @@ void key(char k) {
 // IR Wand
 // ---------------------------------------------------------------------------------------------------------------
 namespace wand {
-const int IR_PIN = 44, IR_CH = 3;
 struct Spell { const char *name; uint8_t cmd; uint16_t color; };
 const Spell SPELLS[] = {{"FLARE", 1, rgb(255, 170, 60)}, {"HUSH", 2, rgb(120, 160, 255)},
                         {"SUMMON", 3, rgb(120, 255, 170)}, {"BANISH", 4, rgb(255, 90, 120)},
@@ -414,32 +414,15 @@ int spell = -1;
 uint32_t castAt = 0, lastImu = 0, hitAt = 0;
 int casts = 0, hits = 0;
 
-void mark(uint32_t us) { ledcWrite(IR_CH, 85); delayMicroseconds(us); }
-void space(uint32_t us) { ledcWrite(IR_CH, 0); delayMicroseconds(us); }
-
-void sendNec(uint16_t addr, uint8_t cmd) {
-  // Extended NEC: 9 ms mark, 4.5 ms space, 32 bits LSB first (addr lo, addr hi, cmd, ~cmd), stop mark. ~68 ms.
-  uint32_t bits = (uint32_t)(addr & 0xFF) | ((uint32_t)(addr >> 8) << 8) | ((uint32_t)cmd << 16) |
-                  ((uint32_t)(uint8_t)~cmd << 24);
-  // Interrupts stay on: a 68 ms blackout would upset Wi-Fi, and receivers tolerate a few us of jitter.
-  mark(9000);
-  space(4500);
-  for (int i = 0; i < 32; i++) { mark(560); space(bits >> i & 1 ? 1690 : 560); }
-  mark(560);
-  space(0);
-}
-
 void enter() {
-  ledcSetup(IR_CH, 38000, 8);
-  ledcAttachPin(IR_PIN, IR_CH);
-  ledcWrite(IR_CH, 0);
+  ir::begin();
   memset(sparks, 0, sizeof(sparks));
   casts = hits = 0;
   spell = -1;
   radio::now(false);  // listens for the partner's "hit" reports
 }
 
-void exit_() { ledcWrite(IR_CH, 0); ledcDetachPin(IR_PIN); }
+void exit_() { ir::end(); }
 
 void cast(int s) {
   spell = s;
@@ -450,7 +433,7 @@ void cast(int s) {
     sparks[sHead] = {cx, cy, cosf(a) * v, sinf(a) * v, millis(), SPELLS[s].color};
     sHead = (sHead + 1) % 40;
   }
-  sendNec(IR_ADDRESS, SPELLS[s].cmd);
+  ir::nec(IR_ADDRESS, SPELLS[s].cmd);
   audio::beep(500 + s * 180, 120);
 }
 

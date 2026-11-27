@@ -35,10 +35,26 @@ Labels: **solid** works reliably; **fiddly** needs setup or tuning; **experiment
 | Chirp Modem | Live spectrogram; 16-tone FSK text over sound | Second Cardputer to decode | solid |
 | Radio Dice | Hardware RNG (true random while RF is on) | — | solid |
 | Fever Chart | On-die temperature sensor | — | solid |
+| Drop Tester | Free-fall time to drop height (h = ½gt²) | A cushion | solid |
+| Spin Tachometer | Gyro RPM, spinning flat on a table | — | solid |
+| Pendulum | Swing period to gravity or string length | String | solid |
+| Tilt Maze | Marble through a random maze by tilting | — | solid |
+| Spirit Level | Vial, bullseye and angles, with a saved zero | — | solid |
+| Pedometer | Steps, cadence, distance | — | solid |
+| Water Gauge | Capacitive level through a glass (G1 wire) | Wire, glass | fiddly |
+| Lie Detector | Grip-capacitance wobble on G1/G2 (fake science) | Two wires | solid |
+| Tuner | McLeod pitch detection, note and cents | — | solid |
+| Noise Meter | Uncalibrated sound level, peak, average, 10-min history | — | solid |
+| Scope | Mic waveform with trigger, or phase portrait | — | solid |
+| Wall Ruler | Chirp echo timing to a wall (duplex driver) | A wall | experiment |
+| Wi-Fi Doctor | Channel congestion score, router ping/jitter/loss | Home Wi-Fi for ping | solid |
+| Router Geiger | Router RSSI as Geiger clicks, dead-spot finder | Home Wi-Fi | solid |
+| BT Census | BLE advertisements counted by kind (counts only) | — | solid |
+| TV Remote | Samsung32, NEC (LG), Sony SIRC and Philips RC5 codes | Your own TV | solid |
 
 ## Keys
 
-Arrow keys are `;` `.` `,` `/`. In the menu: **enter** opens, **w** sets up the home Wi-Fi for CSI (2.4 GHz only, saved in NVS namespace `spooky`), **v** changes volume. In a demo, **`** (top-left) goes back to the menu, and so does **del**, except in demos where you type. Each demo lists its keys in the footer.
+Arrow keys are `;` `.` `,` `/`. In the menu: **enter** opens, **/** shows a demo's full description, **s** opens Screen Check (nudges the picture if an edge is cut off; saved), **w** sets up the home Wi-Fi for CSI (2.4 GHz only, saved in NVS namespace `spooky`), **v** changes volume. In a demo, **`** (top-left) goes back to the menu, and so does **del**, except in demos where you type. Each demo lists its keys in the footer.
 
 ## Build
 
