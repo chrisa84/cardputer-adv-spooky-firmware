@@ -113,8 +113,8 @@ def cmd_burn_key(a):
         with open(path, 'wb') as f:
             f.write(bytes.fromhex(key_hex))
         try:
-            subprocess.run([sys.executable, '-m', 'espefuse', '--chip', 'esp32s3', '--port', a.port, 'burn_key',
-                            KEY_BLOCK, path, 'HMAC_UP', '--do-not-confirm'], check=True)
+            subprocess.run([sys.executable, '-m', 'espefuse', '--chip', 'esp32s3', '--port', a.port, '--do-not-confirm',
+                            'burn-key', KEY_BLOCK, path, 'HMAC_UP'], check=True)
         finally:
             with open(path, 'wb') as f:  # overwrite before the temp dir is removed
                 f.write(b'\0' * 32)
