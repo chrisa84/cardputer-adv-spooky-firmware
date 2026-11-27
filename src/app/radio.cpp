@@ -3,6 +3,7 @@
 #include <esp_now.h>
 #include <Preferences.h>
 #include "ping/ping_sock.h"
+#include "wifi_vault.h"
 
 #if __has_include("secrets.h")
 #include "secrets.h"
@@ -126,13 +127,22 @@ static void hookEvents() {
 }
 
 // ---- lifecycle ----
+static bool fromVault = false;
+
 void begin() {
   WiFi.persistent(false);  // never write our joins into the Wi-Fi driver's own NVS
-  Preferences p;
-  if (p.begin("spooky", true)) {
-    p.getString("ssid", credSsid, sizeof(credSsid));
-    p.getString("pass", credPass, sizeof(credPass));
-    p.end();
+  // 1. the shared encrypted vault (eFuse HMAC key), used by every firmware on this device
+  if (wifiVault::load(credSsid, sizeof(credSsid), credPass, sizeof(credPass))) {
+    fromVault = true;
+  } else {
+    // 2. Spooky's own plain store, from before the vault. Moved into the vault if the key now exists.
+    Preferences p;
+    if (p.begin("spooky", true)) {
+      p.getString("ssid", credSsid, sizeof(credSsid));
+      p.getString("pass", credPass, sizeof(credPass));
+      p.end();
+    }
+    if (credSsid[0] && wifiVault::hasKey()) setCreds(credSsid, credPass);
   }
 #ifdef WIFI_SSID
   if (!credSsid[0]) {
@@ -158,15 +168,29 @@ void off() {
 bool haveCreds() { return credSsid[0] != 0; }
 const char *ssid() { return credSsid; }
 
-void setCreds(const char *s, const char *pw) {
-  strncpy(credSsid, s, sizeof(credSsid) - 1);
-  strncpy(credPass, pw, sizeof(credPass) - 1);
+bool setCreds(const char *s, const char *pw) {
+  strlcpy(credSsid, s, sizeof(credSsid));
+  strlcpy(credPass, pw, sizeof(credPass));
   Preferences p;
+  if (wifiVault::hasKey()) {
+    if (!wifiVault::store(credSsid, credPass)) return false;
+    fromVault = true;
+    p.begin("spooky", false);  // drop any old plain copy
+    p.remove("ssid");
+    p.remove("pass");
+    p.end();
+    return true;
+  }
+  // No eFuse key on this chip: plain NVS, as before. The menu says so.
+  fromVault = false;
   p.begin("spooky", false);
   p.putString("ssid", credSsid);
   p.putString("pass", credPass);
   p.end();
+  return true;
 }
+
+bool credsEncrypted() { return fromVault; }
 
 void router() {
   if (cur == ROUTER) return;

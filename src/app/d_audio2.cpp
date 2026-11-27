@@ -69,7 +69,7 @@ void draw(M5Canvas &c) {
   // note name
   char s[16];
   if (on) snprintf(s, sizeof(s), "%s%d", NOTE[((n % 12) + 12) % 12], n / 12 - 1); else snprintf(s, sizeof(s), "--");
-  c.setFont(&fonts::FreeSansBold18pt7b);
+  c.setFont(&fonts::Orbitron_Light_32);
   c.setTextDatum(top_center);
   c.setTextColor(on ? (fabsf(cents) < 5 ? col::ok : col::ink) : col::dim);
   c.drawString(s, W / 2, TOP + 4);

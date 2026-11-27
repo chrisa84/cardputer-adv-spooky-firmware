@@ -139,7 +139,7 @@ void draw(M5Canvas &c) {
     c.setTextColor(rgb(170, 30, 40));
     c.drawString("Hold both wires. Stay calm...", 6, BOTTOM - 22);
   } else if (verdictAt && now - verdictAt < 3000) {
-    c.setFont(&fonts::FreeSansBold12pt7b);
+    c.setFont(&fonts::Orbitron_Light_24);
     c.setTextDatum(middle_center);
     c.setTextColor(verdictLie ? rgb(190, 20, 30) : rgb(20, 130, 60));
     c.drawString(verdictLie ? "LIE!" : "TRUTH", W / 2, TOP + 50);

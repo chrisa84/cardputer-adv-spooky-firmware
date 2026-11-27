@@ -6,6 +6,9 @@
 #include "radio.h"
 #include "audio.h"
 #include <WiFi.h>
+#include "wifi_vault.h"
+
+namespace usbcmd { void poll(); }
 
 M5Canvas canvas(&M5Cardputer.Display);
 char status[24] = "";
@@ -101,7 +104,8 @@ static void drawMenu(M5Canvas &c) {
   // faint static in the background
   for (int i = 0; i < 60; i++) c.drawPixel(esp_random() % W, TOP + esp_random() % (BOTTOM - TOP), col::line);
   const Demo &d = *DEMOS[sel];
-  ui::header(c, "SPOOKY RADIO", col::group[d.group], radio::haveCreds() ? "wifi set" : "no wifi");
+  ui::header(c, "SPOOKY RADIO", col::group[d.group],
+             !radio::haveCreds() ? "no wifi" : radio::credsEncrypted() ? "wifi vault" : "wifi (plain)");
 
   // list
   const int rows = 8, rowH = 13, listW = 98;
@@ -354,7 +358,8 @@ static void wifiDraw(M5Canvas &c) {
     c.drawString((shown + ((millis() / 400) % 2 ? "_" : " ")).c_str(), 10, 60);
     c.setFont(&fonts::Font0);
     c.setTextColor(col::muted);
-    c.drawString("Saved on this Cardputer only (NVS \"spooky\").", 6, 88);
+    c.drawString(wifiVault::hasKey() ? "Saved encrypted in the shared Wi-Fi vault." : "No vault key: saved unencrypted.",
+                 6, 88);
     ui::footer(c, "enter save  del erase  ` cancel");
     return;
   }
@@ -374,11 +379,13 @@ static void wifiKey(char k) {
   if (k == K_ESC) typing = false;
   else if (k == K_DEL) { if (pass.length()) pass.remove(pass.length() - 1); }
   else if (k == K_ENTER) {
-    radio::setCreds(WiFi.SSID(netSel).c_str(), pass.c_str());
+    bool ok = radio::setCreds(WiFi.SSID(netSel).c_str(), pass.c_str());
+    pass = "";
     WiFi.scanDelete();
     radio::off();
     screen = MENU;
-    ui::toast("Wi-Fi saved", col::ok);
+    ui::toast(!ok ? "Save failed" : radio::credsEncrypted() ? "Saved, encrypted" : "Saved (no vault key)",
+              ok ? col::ok : col::bad);
   } else if (k >= 32 && k < 127 && pass.length() < 63) {
     pass += k;
   }
@@ -430,6 +437,8 @@ static void pollKeys() {
 
 // ---------------------------------------------------------------------------------------------------------------
 void setup() {
+  Serial.setRxBufferSize(8192);  // SD uploads arrive in 4 KB blocks; the 256 B default drops most of them
+  Serial.begin(115200);          // explicit: with USB mode 1 nothing else starts it, and an unstarted port never reads
   auto cfg = M5.config();
   M5Cardputer.begin(cfg, true);
   // Don't call setRotation(1) like old Cardputer examples: M5GFX 0.3+ already applies the ADV panel's rotation
@@ -462,6 +471,7 @@ void setup() {
 void loop() {
   static uint32_t lastDraw = 0;
   pollKeys();
+  if (screen == MENU) usbcmd::poll();
   if (screen == RUN && active && active->poll) active->poll();
   audio::streamPump();
   uint32_t now = millis();

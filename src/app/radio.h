@@ -17,7 +17,8 @@ void off();
 // Home router (for CSI). Credentials come from the Wi-Fi setup screen (NVS) or include/secrets.h.
 bool haveCreds();
 const char *ssid();
-void setCreds(const char *ssid, const char *pass);
+bool setCreds(const char *ssid, const char *pass);   // into the encrypted vault if this chip has the eFuse key
+bool credsEncrypted();
 void router();
 bool routerUp();
 
